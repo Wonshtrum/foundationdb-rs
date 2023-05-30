@@ -14,13 +14,13 @@ use crate::mem::read_unaligned_slice;
 use crate::{FdbError, FdbResult};
 use foundationdb_sys as fdb_sys;
 use std::fmt;
+use std::mem::ManuallyDrop;
 use std::ops::Deref;
 
 /// An slice of keys owned by a FoundationDB future
 pub struct FdbKeys {
     _f: FdbFutureHandle,
-    keys: *const fdb_sys::FDBKey,
-    len: i32,
+    keys: Vec<FdbKey>,
 }
 unsafe impl Sync for FdbKeys {}
 unsafe impl Send for FdbKeys {}
@@ -34,19 +34,17 @@ impl TryFrom<FdbFutureHandle> for FdbKeys {
 
         error::eval(unsafe { fdb_sys::fdb_future_get_key_array(f.as_ptr(), &mut keys, &mut len) })?;
 
-        Ok(FdbKeys { _f: f, keys, len })
+        Ok(FdbKeys {
+            _f: f,
+            keys: unsafe { read_unaligned_slice(keys as *const _, len) },
+        })
     }
 }
 
 impl Deref for FdbKeys {
     type Target = [FdbKey];
     fn deref(&self) -> &Self::Target {
-        assert_eq_size!(FdbKey, fdb_sys::FDBKey);
-        assert_eq_align!(FdbKey, fdb_sys::FDBKey);
-        unsafe {
-            &*(read_unaligned_slice(self.keys, self.len as usize) as *const [fdb_sys::FDBKey]
-                as *const [FdbKey])
-        }
+        &self.keys
     }
 }
 
@@ -65,12 +63,29 @@ impl<'a> IntoIterator for &'a FdbKeys {
     }
 }
 
+impl IntoIterator for FdbKeys {
+    type Item = FdbRowKey;
+    type IntoIter = FdbKeysIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        let keys = ManuallyDrop::new(self.keys);
+        FdbKeysIter {
+            f: std::rc::Rc::new(self._f),
+            ptr: keys.as_ptr(),
+            len: keys.len(),
+            cap: keys.capacity(),
+            pos: 0,
+        }
+    }
+}
+
 /// An iterator of keyvalues owned by a foundationDB future
 pub struct FdbKeysIter {
     f: std::rc::Rc<FdbFutureHandle>,
-    keys: *const fdb_sys::FDBKey,
-    len: i32,
-    pos: i32,
+    ptr: *const FdbKey,
+    len: usize,
+    cap: usize,
+    pos: usize,
 }
 
 impl Iterator for FdbKeysIter {
@@ -80,60 +95,73 @@ impl Iterator for FdbKeysIter {
         self.nth(0)
     }
 
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        if n < self.len - self.pos {
+            // safe because pos < self.len
+            let row_key = unsafe { self.ptr.add(self.pos + n).read() };
+            self.pos += n + 1;
+
+            Some(FdbRowKey {
+                _f: self.f.clone(),
+                row_key,
+            })
+        } else {
+            self.pos = self.len;
+            None
+        }
+    }
+
     fn size_hint(&self) -> (usize, Option<usize>) {
         let rem = (self.len - self.pos) as usize;
         (rem, Some(rem))
     }
+}
+impl ExactSizeIterator for FdbKeysIter {
+    #[inline]
+    fn len(&self) -> usize {
+        (self.len - self.pos) as usize
+    }
+}
+impl DoubleEndedIterator for FdbKeysIter {
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.nth_back(0)
+    }
 
-    fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let pos = (self.pos as usize).checked_add(n);
-        match pos {
-            Some(pos) if pos < self.len as usize => {
-                // safe because pos < self.len
-                let row_key = unsafe { self.keys.add(pos) };
-                self.pos = pos as i32 + 1;
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        if n < self.len - self.pos {
+            // safe because len < original len
+            self.len -= n + 1;
+            let row_key = unsafe { self.ptr.add(self.len).read() };
 
-                Some(FdbRowKey {
-                    _f: self.f.clone(),
-                    row_key,
-                })
-            }
-            _ => {
-                self.pos = self.len;
-                None
-            }
+            Some(FdbRowKey {
+                _f: self.f.clone(),
+                row_key,
+            })
+        } else {
+            self.pos = self.len;
+            None
         }
     }
 }
-
-impl IntoIterator for FdbKeys {
-    type Item = FdbRowKey;
-    type IntoIter = FdbKeysIter;
-
-    fn into_iter(self) -> Self::IntoIter {
-        FdbKeysIter {
-            f: std::rc::Rc::new(self._f),
-            keys: self.keys,
-            len: self.len,
-            pos: 0,
-        }
+impl Drop for FdbKeysIter {
+    fn drop(&mut self) {
+        unsafe { Vec::from_raw_parts(self.ptr as *mut FdbKey, 0, self.cap) };
     }
 }
+
 /// A row key you can own
 ///
 /// Until dropped, this might prevent multiple key/values from beeing freed.
 /// (i.e. the future that own the data is dropped once all data it provided is dropped)
 pub struct FdbRowKey {
     _f: std::rc::Rc<FdbFutureHandle>,
-    row_key: *const fdb_sys::FDBKey,
+    row_key: FdbKey,
 }
 
 impl Deref for FdbRowKey {
     type Target = FdbKey;
     fn deref(&self) -> &Self::Target {
-        assert_eq_size!(FdbKey, fdb_sys::FDBKey);
-        assert_eq_align!(FdbKey, fdb_sys::FDBKey);
-        unsafe { &*(self.row_key as *const FdbKey) }
+        &self.row_key
     }
 }
 impl AsRef<FdbKey> for FdbRowKey {

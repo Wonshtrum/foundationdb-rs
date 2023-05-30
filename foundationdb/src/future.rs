@@ -25,6 +25,7 @@
 use std::convert::TryFrom;
 use std::ffi::CStr;
 use std::fmt;
+use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::os::raw::c_char;
 use std::pin::Pin;
@@ -35,7 +36,7 @@ use std::sync::Arc;
 pub use crate::fdb_keys::FdbKeys;
 #[cfg_api_versions(min = 710)]
 pub use crate::mapped_key_values::MappedKeyValues;
-use crate::mem::{read_unaligned_slice, read_unaligned_struct};
+use crate::mem::read_unaligned_slice;
 use foundationdb_macros::cfg_api_versions;
 use foundationdb_sys as fdb_sys;
 use futures::prelude::*;
@@ -191,8 +192,7 @@ impl TryFrom<FdbFutureHandle> for Option<FdbSlice> {
 /// A slice of addresses owned by a foundationDB future
 pub struct FdbAddresses {
     _f: FdbFutureHandle,
-    strings: *const *const c_char,
-    len: i32,
+    strings: Vec<FdbAddress>,
 }
 unsafe impl Sync for FdbAddresses {}
 unsafe impl Send for FdbAddresses {}
@@ -210,8 +210,7 @@ impl TryFrom<FdbFutureHandle> for FdbAddresses {
 
         Ok(FdbAddresses {
             _f: f,
-            strings,
-            len,
+            strings: unsafe { read_unaligned_slice(strings as *const _, len) },
         })
     }
 }
@@ -220,9 +219,7 @@ impl Deref for FdbAddresses {
     type Target = [FdbAddress];
 
     fn deref(&self) -> &Self::Target {
-        assert_eq_size!(FdbAddress, *const c_char);
-        assert_eq_align!(FdbAddress, *const c_char);
-        unsafe { &*(read_unaligned_slice(self.strings as *const FdbAddress, self.len as usize)) }
+        &self.strings
     }
 }
 impl AsRef<[FdbAddress]> for FdbAddresses {
@@ -258,8 +255,7 @@ impl AsRef<CStr> for FdbAddress {
 /// An slice of keyvalues owned by a foundationDB future
 pub struct FdbValues {
     _f: FdbFutureHandle,
-    keyvalues: *const fdb_sys::FDBKeyValue,
-    len: i32,
+    keyvalues: Vec<FdbKeyValue>,
     more: bool,
 }
 unsafe impl Sync for FdbValues {}
@@ -290,8 +286,7 @@ impl TryFrom<FdbFutureHandle> for FdbValues {
 
         Ok(FdbValues {
             _f: f,
-            keyvalues,
-            len,
+            keyvalues: unsafe { read_unaligned_slice(keyvalues as *const _, len) },
             more: more != 0,
         })
     }
@@ -300,9 +295,7 @@ impl TryFrom<FdbFutureHandle> for FdbValues {
 impl Deref for FdbValues {
     type Target = [FdbKeyValue];
     fn deref(&self) -> &Self::Target {
-        assert_eq_size!(FdbKeyValue, fdb_sys::FDBKeyValue);
-        assert_eq_align!(FdbKeyValue, fdb_sys::FDBKeyValue);
-        unsafe { &*(read_unaligned_slice(self.keyvalues as *const FdbKeyValue, self.len as usize)) }
+        &self.keyvalues
     }
 }
 
@@ -320,15 +313,18 @@ impl<'a> IntoIterator for &'a FdbValues {
         self.deref().iter()
     }
 }
+
 impl IntoIterator for FdbValues {
     type Item = FdbValue;
     type IntoIter = FdbValuesIter;
 
     fn into_iter(self) -> Self::IntoIter {
+        let keyvalues = ManuallyDrop::new(self.keyvalues);
         FdbValuesIter {
             f: Arc::new(self._f),
-            keyvalues: self.keyvalues,
-            len: self.len,
+            ptr: keyvalues.as_ptr(),
+            len: keyvalues.len(),
+            cap: keyvalues.capacity(),
             pos: 0,
         }
     }
@@ -337,9 +333,10 @@ impl IntoIterator for FdbValues {
 /// An iterator of keyvalues owned by a foundationDB future
 pub struct FdbValuesIter {
     f: Arc<FdbFutureHandle>,
-    keyvalues: *const fdb_sys::FDBKeyValue,
-    len: i32,
-    pos: i32,
+    ptr: *const FdbKeyValue,
+    len: usize,
+    cap: usize,
+    pos: usize,
 }
 
 unsafe impl Send for FdbValuesIter {}
@@ -352,22 +349,18 @@ impl Iterator for FdbValuesIter {
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let pos = (self.pos as usize).checked_add(n);
-        match pos {
-            Some(pos) if pos < self.len as usize => {
-                // safe because pos < self.len
-                let keyvalue = unsafe { self.keyvalues.add(pos) };
-                self.pos = pos as i32 + 1;
+        if n < self.len - self.pos {
+            // safe because pos < self.len
+            let keyvalue = unsafe { self.ptr.add(self.pos + n).read() };
+            self.pos += n + 1;
 
-                Some(FdbValue {
-                    _f: self.f.clone(),
-                    keyvalue,
-                })
-            }
-            _ => {
-                self.pos = self.len;
-                None
-            }
+            Some(FdbValue {
+                _f: self.f.clone(),
+                keyvalue,
+            })
+        } else {
+            self.pos = self.len;
+            None
         }
     }
 
@@ -388,10 +381,11 @@ impl DoubleEndedIterator for FdbValuesIter {
     }
 
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        if n < self.len() {
-            self.len -= 1 + n as i32;
+        if n < self.len - self.pos {
             // safe because len < original len
-            let keyvalue = unsafe { self.keyvalues.add(self.len as usize) };
+            self.len -= n + 1;
+            let keyvalue = unsafe { self.ptr.add(self.len).read() };
+
             Some(FdbValue {
                 _f: self.f.clone(),
                 keyvalue,
@@ -402,6 +396,11 @@ impl DoubleEndedIterator for FdbValuesIter {
         }
     }
 }
+impl Drop for FdbValuesIter {
+    fn drop(&mut self) {
+        unsafe { Vec::from_raw_parts(self.ptr as *mut FdbKeyValue, 0, self.cap) };
+    }
+}
 
 /// A keyvalue you can own
 ///
@@ -409,7 +408,7 @@ impl DoubleEndedIterator for FdbValuesIter {
 /// (i.e. the future that own the data is dropped once all data it provided is dropped)
 pub struct FdbValue {
     _f: Arc<FdbFutureHandle>,
-    keyvalue: *const fdb_sys::FDBKeyValue,
+    keyvalue: FdbKeyValue,
 }
 
 unsafe impl Send for FdbValue {}
@@ -417,9 +416,7 @@ unsafe impl Send for FdbValue {}
 impl Deref for FdbValue {
     type Target = FdbKeyValue;
     fn deref(&self) -> &Self::Target {
-        assert_eq_size!(FdbKeyValue, fdb_sys::FDBKeyValue);
-        assert_eq_align!(FdbKeyValue, fdb_sys::FDBKeyValue);
-        unsafe { &*(read_unaligned_struct(self.keyvalue as *const FdbKeyValue)) }
+        &self.keyvalue
     }
 }
 impl AsRef<FdbKeyValue> for FdbValue {

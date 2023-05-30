@@ -22,14 +22,14 @@ use foundationdb_sys as fdb_sys;
 use std::borrow::Cow;
 use std::fmt;
 
+use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::sync::Arc;
 
 /// An slice of mapped keyvalues owned by a foundationDB future produced by the `get_mapped` method.
 pub struct MappedKeyValues {
     _f: FdbFutureHandle,
-    mapped_keyvalues: *const fdb_sys::FDBMappedKeyValue,
-    len: i32,
+    mapped_keyvalues: Vec<FdbMappedKeyValue>,
     more: bool,
 }
 unsafe impl Sync for MappedKeyValues {}
@@ -60,8 +60,7 @@ impl TryFrom<FdbFutureHandle> for MappedKeyValues {
 
         Ok(MappedKeyValues {
             _f: f,
-            mapped_keyvalues: keyvalues,
-            len,
+            mapped_keyvalues: unsafe { read_unaligned_slice(keyvalues as *const _, len) },
             more: more != 0,
         })
     }
@@ -137,12 +136,12 @@ impl FdbMappedKeyValue {
     }
 
     /// retrieves the associated slice of [`FdbKeyValue`]
-    pub fn key_values(&self) -> &[FdbKeyValue] {
+    pub fn key_values(&self) -> Vec<FdbKeyValue> {
         unsafe {
-            &*(read_unaligned_slice(
+            read_unaligned_slice(
                 self.0.getRange.data as *const FdbKeyValue,
-                self.0.getRange.m_size as usize,
-            ))
+                self.0.getRange.m_size,
+            )
         }
     }
 }
@@ -151,14 +150,7 @@ impl Deref for MappedKeyValues {
     type Target = [FdbMappedKeyValue];
 
     fn deref(&self) -> &Self::Target {
-        assert_eq_size!(FdbMappedKeyValue, fdb_sys::FDBMappedKeyValue);
-        assert_eq_align!(FdbMappedKeyValue, fdb_sys::FDBMappedKeyValue);
-        unsafe {
-            &*(read_unaligned_slice(
-                self.mapped_keyvalues as *const FdbMappedKeyValue,
-                self.len as usize,
-            ))
-        }
+        &self.mapped_keyvalues
     }
 }
 
@@ -180,7 +172,7 @@ impl<'a> IntoIterator for &'a MappedKeyValues {
 /// An FdbMappedValue that you can own.
 pub struct FdbMappedValue {
     _f: Arc<FdbFutureHandle>,
-    mapped_keyvalue: *const fdb_sys::FDBMappedKeyValue,
+    mapped_keyvalue: FdbMappedKeyValue,
 }
 
 impl IntoIterator for MappedKeyValues {
@@ -188,10 +180,12 @@ impl IntoIterator for MappedKeyValues {
     type IntoIter = FdbMappedValuesIter;
 
     fn into_iter(self) -> Self::IntoIter {
+        let mapped_keyvalues = ManuallyDrop::new(self.mapped_keyvalues);
         FdbMappedValuesIter {
             f: Arc::new(self._f),
-            keyvalues: self.mapped_keyvalues,
-            len: self.len,
+            ptr: mapped_keyvalues.as_ptr(),
+            len: mapped_keyvalues.len(),
+            cap: mapped_keyvalues.capacity(),
             pos: 0,
         }
     }
@@ -202,9 +196,7 @@ unsafe impl Send for FdbMappedValue {}
 impl Deref for FdbMappedValue {
     type Target = FdbMappedKeyValue;
     fn deref(&self) -> &Self::Target {
-        assert_eq_size!(FdbMappedKeyValue, fdb_sys::FDBMappedKeyValue);
-        assert_eq_align!(FdbMappedKeyValue, fdb_sys::FDBMappedKeyValue);
-        unsafe { &*(self.mapped_keyvalue as *const FdbMappedKeyValue) }
+        &self.mapped_keyvalue
     }
 }
 impl AsRef<FdbMappedKeyValue> for FdbMappedValue {
@@ -222,9 +214,10 @@ impl Eq for FdbMappedValue {}
 /// An iterator of mapped keyvalues owned by a foundationDB future
 pub struct FdbMappedValuesIter {
     f: Arc<FdbFutureHandle>,
-    keyvalues: *const fdb_sys::FDBMappedKeyValue,
-    len: i32,
-    pos: i32,
+    ptr: *const FdbMappedKeyValue,
+    len: usize,
+    cap: usize,
+    pos: usize,
 }
 
 unsafe impl Send for FdbMappedValuesIter {}
@@ -237,22 +230,18 @@ impl Iterator for FdbMappedValuesIter {
     }
 
     fn nth(&mut self, n: usize) -> Option<Self::Item> {
-        let pos = (self.pos as usize).checked_add(n);
-        match pos {
-            Some(pos) if pos < self.len as usize => {
-                // safe because pos < self.len
-                let keyvalue = unsafe { self.keyvalues.add(pos) };
-                self.pos = pos as i32 + 1;
+        if n < self.len - self.pos {
+            // safe because pos < self.len
+            let mapped_keyvalue = unsafe { self.ptr.add(self.pos + n).read() };
+            self.pos += n + 1;
 
-                Some(FdbMappedValue {
-                    _f: self.f.clone(),
-                    mapped_keyvalue: keyvalue,
-                })
-            }
-            _ => {
-                self.pos = self.len;
-                None
-            }
+            Some(FdbMappedValue {
+                _f: self.f.clone(),
+                mapped_keyvalue,
+            })
+        } else {
+            self.pos = self.len;
+            None
         }
     }
 
@@ -273,17 +262,23 @@ impl DoubleEndedIterator for FdbMappedValuesIter {
     }
 
     fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
-        if n < self.len() {
-            self.len -= 1 + n as i32;
+        if n < self.len - self.pos {
             // safe because len < original len
-            let keyvalue = unsafe { self.keyvalues.add(self.len as usize) };
+            self.len -= n + 1;
+            let mapped_keyvalue = unsafe { self.ptr.add(self.len).read() };
+
             Some(FdbMappedValue {
                 _f: self.f.clone(),
-                mapped_keyvalue: keyvalue,
+                mapped_keyvalue,
             })
         } else {
             self.pos = self.len;
             None
         }
+    }
+}
+impl Drop for FdbMappedValuesIter {
+    fn drop(&mut self) {
+        unsafe { Vec::from_raw_parts(self.ptr as *mut FdbMappedKeyValue, 0, self.cap) };
     }
 }

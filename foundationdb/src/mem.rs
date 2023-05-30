@@ -4,18 +4,23 @@
 ///
 /// Rust does not allow dereferencing unaligned pointers, so we copy the memory first to an aligned
 /// pointer before constructing our slice.
-use std::{alloc::Layout, ptr::copy_nonoverlapping};
+use std::{
+    alloc::Layout,
+    ptr::{copy_nonoverlapping, read},
+};
 
-pub(crate) unsafe fn read_unaligned_slice<T>(src: *const T, len: usize) -> *const [T] {
-    let layout = Layout::array::<T>(len).expect("failed to create slice memory layout");
-    let aligned = std::alloc::alloc(layout);
-    copy_nonoverlapping(src as *const u8, aligned, layout.size());
-    std::slice::from_raw_parts(aligned as *const T, len)
+pub(crate) unsafe fn read_unaligned_slice<T>(src: *const T, len: i32) -> Vec<T> {
+    let len = len as usize;
+    let mut v = Vec::with_capacity(len);
+    copy_nonoverlapping(src, v.as_mut_ptr(), len);
+    v.set_len(len);
+    v
 }
 
-pub(crate) unsafe fn read_unaligned_struct<T>(src: *const T) -> *const T {
+#[allow(unused)]
+pub(crate) unsafe fn read_unaligned_struct<T>(src: *const T) -> T {
     let layout = Layout::new::<T>();
     let aligned = std::alloc::alloc(layout);
     copy_nonoverlapping(src as *const u8, aligned, layout.size());
-    aligned as *const T
+    read(aligned as *const T)
 }
