@@ -12,26 +12,26 @@ use foundationdb_sys::if_cfg_api_versions;
 extern crate static_assertions;
 
 pub mod api;
-if_cfg_api_versions! {min = "fdb-5_1", max = "fdb-6_0" =>
+if_cfg_api_versions! {min = 510, max = 600 =>
     pub mod cluster;
 }
 mod database;
 pub mod directory;
 mod error;
-if_cfg_api_versions! {min = "fdb-7_0" =>
+if_cfg_api_versions! {min = 700 =>
     #[deny(missing_docs)]
     pub mod fdb_keys;
 }
 pub mod future;
 mod keyselector;
-if_cfg_api_versions! {min = "fdb-7_1" =>
+if_cfg_api_versions! {min = 710 =>
     #[deny(missing_docs)]
     pub mod mapped_key_values;
 }
 /// Generated configuration types for use with the various `set_option` functions
 #[allow(clippy::all)]
 pub mod options;
-if_cfg_api_versions! {min = "fdb-7_1", feature = "tenant-experimental" =>
+if_cfg_api_versions! {min = 710, feature = "tenant-experimental" =>
     pub mod tenant;
 }
 pub mod timekeeper;
@@ -43,7 +43,7 @@ pub mod tuple {
     pub use foundationdb_tuple::*;
 }
 
-if_cfg_api_versions! {min = "fdb-5_1", max = "fdb-6_0" =>
+if_cfg_api_versions! {min = 510, max = 600 =>
     pub use crate::cluster::Cluster;
 }
 

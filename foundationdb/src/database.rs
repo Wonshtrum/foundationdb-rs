@@ -139,7 +139,7 @@ impl Database {
     /// This is a compatibility api. If you only use API version ≥ 610 you should
     /// use `Database::new`, `Database::from_path` or  `Database::default`.
     pub async fn new_compat(path: Option<&str>) -> FdbResult<Database> {
-        if_cfg_api_versions! { min = "fdb-5_1", max = "fdb-6_0" => {
+        if_cfg_api_versions! { min = 510, max = 600 => {
             let cluster = crate::cluster::Cluster::new(path).await?;
             let database = cluster.create_database().await?;
             Ok(database)
