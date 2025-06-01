@@ -92,7 +92,7 @@ fn get_supported_feature_range(minimum_version: i32, maximum_version: Option<i32
 
 // TODO: Should we import something like lazy_static?
 fn get_version_mapping() -> HashMap<String, i32> {
-    let mut version_mapping = HashMap::with_capacity(9);
+    let mut version_mapping = HashMap::with_capacity(11);
     version_mapping.insert("fdb-7_4".into(), 740);
     version_mapping.insert("fdb-7_3".into(), 730);
     version_mapping.insert("fdb-7_1".into(), 710);
