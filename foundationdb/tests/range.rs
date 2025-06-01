@@ -27,16 +27,22 @@ fn test_range() {
         feature = "fdb-6_3",
         feature = "fdb-7_0",
         feature = "fdb-7_1",
-        feature = "fdb-7_3"
+        feature = "fdb-7_3",
+        feature = "fdb-7_4"
     ))]
     {
         futures::executor::block_on(test_get_estimate_range()).expect("failed to run");
     }
-    #[cfg(any(feature = "fdb-7_0", feature = "fdb-7_1", feature = "fdb-7_3"))]
+    #[cfg(any(
+        feature = "fdb-7_0",
+        feature = "fdb-7_1",
+        feature = "fdb-7_3",
+        feature = "fdb-7_4"
+    ))]
     {
         futures::executor::block_on(test_get_range_split_points()).expect("failed to run");
     }
-    #[cfg(any(feature = "fdb-7_1", feature = "fdb-7_3"))]
+    #[cfg(any(feature = "fdb-7_1", feature = "fdb-7_3", feature = "fdb-7_4"))]
     {
         futures::executor::block_on(test_mapped_value()).expect("failed to run");
         futures::executor::block_on(test_mapped_values()).expect("failed to run");

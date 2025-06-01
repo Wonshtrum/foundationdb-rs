@@ -4,7 +4,7 @@ mod common;
 fn test_tenant() {
     let _guard = unsafe { foundationdb::boot() };
     #[cfg(all(
-        any(feature = "fdb-7_1", feature = "fdb-7_3"),
+        any(feature = "fdb-7_1", feature = "fdb-7_3", feature = "fdb-7_4"),
         feature = "tenant-experimental"
     ))]
     {
@@ -14,7 +14,7 @@ fn test_tenant() {
 }
 
 #[cfg(all(
-    any(feature = "fdb-7_1", feature = "fdb-7_3"),
+    any(feature = "fdb-7_1", feature = "fdb-7_3", feature = "fdb-7_4"),
     feature = "tenant-experimental"
 ))]
 async fn test_tenant_management() -> foundationdb::FdbResult<()> {
@@ -64,7 +64,7 @@ async fn test_tenant_management() -> foundationdb::FdbResult<()> {
 }
 
 #[cfg(all(
-    any(feature = "fdb-7_1", feature = "fdb-7_3"),
+    any(feature = "fdb-7_1", feature = "fdb-7_3", feature = "fdb-7_4"),
     feature = "tenant-experimental"
 ))]
 async fn test_tenant_run() -> foundationdb::FdbResult<()> {

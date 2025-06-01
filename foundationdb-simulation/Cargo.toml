@@ -24,7 +24,7 @@ default = ["embedded-fdb-include"]
 cpp-abi = []
 fdb-7_1 = ["foundationdb/fdb-7_1", "foundationdb-sys/fdb-7_1", "cpp-abi"]
 fdb-7_3 = ["foundationdb/fdb-7_3", "foundationdb-sys/fdb-7_3", "cpp-abi"]
-fdb-7_4 = ["foundationdb/fdb-7_3", "foundationdb-sys/fdb-7_3"]
+fdb-7_4 = ["foundationdb/fdb-7_4", "foundationdb-sys/fdb-7_4"]
 fdb-docker = []
 embedded-fdb-include = [
     "foundationdb/embedded-fdb-include",

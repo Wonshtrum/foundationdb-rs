@@ -29,14 +29,15 @@ fn test_get() {
     futures::executor::block_on(test_get_addresses_for_key_async()).expect("failed to run");
     futures::executor::block_on(test_set_raw_option_async()).expect("failed to run");
     futures::executor::block_on(test_fails_to_set_unknown_raw_option()).expect("failed to run");
-    #[cfg(any(
+    /*#[cfg(any(
+        feature = "fdb-7_4",
         feature = "fdb-7_3",
         feature = "fdb-7_1",
         feature = "fdb-7_0",
         feature = "fdb-6_3",
         feature = "fdb-6_2",
         feature = "fdb-6_1"
-    ))]
+    ))]*/
     futures::executor::block_on(test_metadata_version()).expect("failed to run");
 }
 

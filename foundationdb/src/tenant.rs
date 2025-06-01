@@ -28,9 +28,9 @@ const TENANT_MAP_PREFIX: &[u8] = b"\xFF\xFF/management/tenant_map/";
 #[cfg(feature = "fdb-7_1")]
 const TENANT_MAP_PREFIX_END: &[u8] = b"\xFF\xFF/management/tenant_map0";
 
-#[cfg(feature = "fdb-7_3")]
+#[cfg(any(feature = "fdb-7_3", feature = "fdb-7_4"))]
 const TENANT_MAP_PREFIX: &[u8] = b"\xFF\xFF/management/tenant/map/";
-#[cfg(feature = "fdb-7_3")]
+#[cfg(any(feature = "fdb-7_3", feature = "fdb-7_4"))]
 const TENANT_MAP_PREFIX_END: &[u8] = b"\xFF\xFF/management/tenant/map0";
 
 /// A `FdbTenant` represents a named key-space within a database that can be interacted with transactionally.
@@ -217,7 +217,7 @@ pub struct TenantInfo {
     pub name: Vec<u8>,
 }
 
-#[cfg(feature = "fdb-7_3")]
+#[cfg(any(feature = "fdb-7_3", feature = "fdb-7_4"))]
 /// Holds the information about a tenant
 #[derive(Serialize, Deserialize, Debug)]
 pub struct TenantInfo {
@@ -239,7 +239,7 @@ impl TryFrom<(&[u8], &[u8])> for TenantInfo {
                 prefix: tenant_info.prefix,
             }),
 
-            #[cfg(feature = "fdb-7_3")]
+            #[cfg(any(feature = "fdb-7_3", feature = "fdb-7_4"))]
             Ok(tenant_info) => Ok(TenantInfo {
                 name: tenant_info.name,
                 id: tenant_info.id,
@@ -260,7 +260,7 @@ struct FDBTenantInfo {
     prefix: Vec<u8>,
 }
 
-#[cfg(feature = "fdb-7_3")]
+#[cfg(any(feature = "fdb-7_3", feature = "fdb-7_4"))]
 #[derive(Serialize, Deserialize, Debug)]
 struct FDBTenantInfo {
     id: i64,
@@ -269,7 +269,7 @@ struct FDBTenantInfo {
     prefix: FDBTenantPrintableInfo,
 }
 
-#[cfg(feature = "fdb-7_3")]
+#[cfg(any(feature = "fdb-7_3", feature = "fdb-7_4"))]
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 enum TenantLockState {
@@ -278,7 +278,7 @@ enum TenantLockState {
     ReadOnly,
 }
 
-#[cfg(feature = "fdb-7_3")]
+#[cfg(any(feature = "fdb-7_3", feature = "fdb-7_4"))]
 /// Display a printable version of bytes
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FDBTenantPrintableInfo {
