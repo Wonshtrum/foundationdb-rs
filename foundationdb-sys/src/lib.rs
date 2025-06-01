@@ -25,42 +25,46 @@ macro_rules! versions_expand {
     (@mid [$drop:tt][][$(($($acc1:tt)*))*][$(($($acc2:tt)*))*][$(($($acc3:tt)*))*]) => {
         versions_expand!(@end ($) [$(($($acc1)*))*][$(($($acc2)*))*][$(($($acc3)*))*]);
     };
-    (@end ($d:tt) [$(($min1:tt $max1:tt $($version1:tt)*))*][$(($min2:tt $($version2:tt)*))*][$(($max3:tt $($version3:tt)*))*]) => {
+    (@end ($d:tt)
+        [$((($min_name1:tt, $min1:tt) ($max_name1:tt, $max1:tt) $(($version_name1:tt, $version1:tt))*))*]
+        [$((($min_name2:tt, $min2:tt) $(($version_name2:tt, $version2:tt))*))*]
+        [$((($max_name3:tt, $max3:tt) $(($version_name3:tt, $version3:tt))*))*]
+    ) => {
         #[macro_export]
         macro_rules! if_cfg_api_versions {
             $(
                 (min=$min1, max=$max1 $d(,feature = $feature:literal)* => {$d($then:tt)*} else {$d($else:tt)*}) => {{
-                    #[cfg(any(feature=$min1 $(,feature=$version1)* ,feature=$max1 $d(,feature=$feature)*))]
+                    #[cfg(any(feature=$min_name1 $(,feature=$version_name1)* ,feature=$max_name1 $d(,feature=$feature)*))]
                     { $d($then)* }
-                    #[cfg(not(any(feature=$min1 $(,feature=$version1)* ,feature=$max1 $d(,feature=$feature)*)))]
+                    #[cfg(not(any(feature=$min_name1 $(,feature=$version_name1)* ,feature=$max_name1 $d(,feature=$feature)*)))]
                     { $d($else)* }
                 }};
                 (min=$min1, max=$max1 $d(,feature = $feature:literal)* => $d($then:tt)*) => {
-                    #[cfg(any(feature=$min1 $(,feature=$version1)* ,feature=$max1 $d(,feature=$feature)*))]
+                    #[cfg(any(feature=$min_name1 $(,feature=$version_name1)* ,feature=$max_name1 $d(,feature=$feature)*))]
                     $d($then)*
                 };
             )*
             $(
                 (min=$min2 $d(,feature = $feature:literal)* => {$d($then:tt)*} else {$d($else:tt)*}) => {{
-                    #[cfg(any(feature=$min2 $(,feature=$version2)* $d(,feature=$feature)*))]
+                    #[cfg(any(feature=$min_name2 $(,feature=$version_name2)* $d(,feature=$feature)*))]
                     { $d($then)* }
-                    #[cfg(not(any(feature=$min2 $(,feature=$version2)* $d(,feature=$feature)*)))]
+                    #[cfg(not(any(feature=$min_name2 $(,feature=$version_name2)* $d(,feature=$feature)*)))]
                     { $d($else)* }
                 }};
                 (min=$min2 $d(,feature = $feature:literal)* => $d($then:tt)*) => {
-                    #[cfg(any(feature=$min2 $(,feature=$version2)* $d(,feature=$feature)*))]
+                    #[cfg(any(feature=$min_name2 $(,feature=$version_name2)* $d(,feature=$feature)*))]
                     $d($then)*
                 };
             )*
             $(
                 (max=$max3 $d(,feature = $feature:literal)* => {$d($then:tt)*} else {$d($else:tt)*}) => {{
-                    #[cfg(any($(feature=$version3,)* feature=$max3 $d(,feature=$feature)*))]
+                    #[cfg(any($(feature=$version_name3,)* feature=$max_name3 $d(,feature=$feature)*))]
                     { $d($then)* }
-                    #[cfg(not(any($(feature=$version3,)* feature=$max3 $d(,feature=$feature)*)))]
+                    #[cfg(not(any($(feature=$version_name3,)* feature=$max_name3 $d(,feature=$feature)*)))]
                     { $d($else)* }
                 }};
                 (max=$max3 $d(,feature = $feature:literal)* => $d($then:tt)*) => {
-                    #[cfg(any($(feature=$version3,)* feature=$max3 $d(,feature=$feature)*))]
+                    #[cfg(any($(feature=$version_name3,)* feature=$max_name3 $d(,feature=$feature)*))]
                     $d($then)*
                 };
             )*
@@ -69,6 +73,13 @@ macro_rules! versions_expand {
 }
 
 versions_expand![
-    "fdb-5_1", "fdb-5_2", "fdb-6_0", "fdb-6_1", "fdb-6_2", "fdb-6_3", "fdb-7_0", "fdb-7_1",
-    "fdb-7_3"
+    ("fdb-5_1", 510),
+    ("fdb-5_2", 520),
+    ("fdb-6_0", 600),
+    ("fdb-6_1", 610),
+    ("fdb-6_2", 620),
+    ("fdb-6_3", 630),
+    ("fdb-7_0", 700),
+    ("fdb-7_1", 710),
+    ("fdb-7_3", 730),
 ];

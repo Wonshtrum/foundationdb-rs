@@ -490,7 +490,7 @@ impl TryFrom<FdbFutureHandle> for i64 {
     fn try_from(f: FdbFutureHandle) -> FdbResult<Self> {
         let mut version: i64 = 0;
         error::eval(unsafe {
-            if_cfg_api_versions!(min = "fdb-6_2" => {
+            if_cfg_api_versions!(min = 620 => {
                     fdb_sys::fdb_future_get_int64(f.as_ptr(), &mut version)
                 } else {
                     fdb_sys::fdb_future_get_version(f.as_ptr(), &mut version)

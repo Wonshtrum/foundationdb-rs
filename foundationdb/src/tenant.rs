@@ -234,7 +234,7 @@ impl TryFrom<(&[u8], &[u8])> for TenantInfo {
     fn try_from(k_v: (&[u8], &[u8])) -> Result<Self, Self::Error> {
         let value = k_v.1;
         match serde_json::from_slice::<FDBTenantInfo>(value) {
-            Ok(tenant_info) => if_cfg_api_versions!(min = "fdb-7_3" => {
+            Ok(tenant_info) => if_cfg_api_versions!(min = 730 => {
                 Ok(TenantInfo {
                     name: tenant_info.name,
                     id: tenant_info.id,
